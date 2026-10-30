@@ -3082,6 +3082,41 @@ body::after{
 @keyframes bootSpin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){ .boot-skeleton::before{animation:none} }
 
+/* 学习反馈：即时进度、已通过目录、移动端笔记 */
+.lesson-progress{
+  margin-bottom:22px;padding:16px 18px;border:1px solid rgba(53,224,208,.25);
+  border-radius:var(--radius);background:linear-gradient(110deg,rgba(53,224,208,.08),rgba(110,168,255,.07));
+}
+.lesson-progress-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.lesson-progress-head b{display:flex;align-items:center;gap:8px;color:var(--aurora);font-size:14px}
+.lesson-progress-head span{font-size:12px;color:var(--ink-2)}
+[data-lesson-bar] i{transition:width .25s ease}
+.toc-i.is-passed span{background:var(--ok-bg)!important;border-color:var(--ok-line)!important;color:var(--aurora)!important}
+.toc-i.is-passed::after{content:"✓";margin-left:auto;color:var(--aurora)}
+.mist-review{margin-bottom:18px}
+.mist-source{display:inline-flex;align-items:center;gap:4px;margin-left:auto}
+.mist-f{flex-wrap:wrap}
+@media(max-width:768px){
+  .lesson-progress{padding:14px}
+  .lesson-progress-head{flex-wrap:wrap;gap:6px}
+  .lesson-aside{display:block!important;margin-top:22px}
+  .lesson-aside .aside-stick{position:static}
+  .lesson-aside .card:first-child{display:none}
+  .lesson-aside .notes{width:100%;min-height:140px}
+  .lesson-nav{flex-wrap:wrap;gap:10px}
+  .lesson-nav #finishLesson{order:-1;flex-basis:100%}
+  .lesson-nav>a{flex:1;min-width:0;white-space:normal}
+  .lesson-nav>span:empty{display:none}
+}
+@media(prefers-reduced-motion:reduce){[data-lesson-bar] i{transition:none}}
+
+/* 手机导航入口与遮罩 */
+.lesson-nav>a:last-child .ico{transform:none!important}
+@media(max-width:768px){
+  #menuBtn,#closeSide{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;flex:none}
+  #scrim.on{display:block;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:39}
+}
+
 </style>
 </head>
 <body>
@@ -3729,7 +3764,7 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
           if (old) raw = { completed: old.completed, quiz: old.quiz, exercise: old.exercise, weekend: old.weekend, checkin: old.checkin, drafts: old.drafts };
         } catch (e) { }
       }
-      this.data = merge(DEFAULTS, raw || {});
+      this.data = merge(JSON.parse(JSON.stringify(DEFAULTS)), raw || {});
       return this.data;
     },
     save: function () { try { localStorage.setItem(KEY, JSON.stringify(this.data)); } catch (e) { } },
@@ -4225,6 +4260,7 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
     U.store.save();
     if (!prev) { U.addXp(xp || 8, 'inter:' + key); U.recordActivity(1); }
     else if (!prev.ok && ok) U.addXp(Math.round((xp || 8) / 2), 'inter-fix:' + key);
+    document.dispatchEvent(new Event('lessonprogress'));
   }
   function verdict(root, ok, html) {
     var box = root.querySelector('.vz');
@@ -4349,6 +4385,7 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
         (right === cards.length ? U.icon('check', 14) + ' 全对，这课的快测通关了' : U.icon('bulb', 14) + ' 答对 ' + right + ' / ' + cards.length + '，错题已进复习本') + '</span>';
       paintState(root, right === cards.length ? 'ok' : 'bad', U.icon(right === cards.length ? 'check' : 'x', 13) + (right === cards.length ? '已通过' : '有错题'));
     }
+    document.dispatchEvent(new Event('lessonprogress'));
   }
   function addMistake(m) {
     var s = U.state();
@@ -4492,14 +4529,18 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
       '<div class="vz"></div>' +
       '</section>';
   }
+  function orderSequence(root) {
+    return U.$$('.ord-item.picked', root).sort(function (a, b) {
+      return +a.querySelector('.ord-seq').textContent - +b.querySelector('.ord-seq').textContent;
+    }).map(function (x) { return +x.getAttribute('data-src'); });
+  }
   function orderPick(root, li, b) {
     if (li.classList.contains('picked')) return;
     var count = U.$$('.ord-item.picked', root).length;
     li.classList.add('picked');
     li.querySelector('.ord-seq').textContent = count + 1;
     if (count + 1 === b.answer.length) {
-      var seq = U.$$('.ord-item.picked', root).map(function (x) { return +x.getAttribute('data-src'); });
-      checkOrder(root, b, seq);
+      checkOrder(root, b, orderSequence(root));
     }
   }
   function resetOrder(root, b) {
@@ -4598,8 +4639,9 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
       '</section>';
   }
   function resetMatch(root) {
-    U.$$('.mt-item', root).forEach(function (x) { x.classList.remove('sel', 'ok', 'bad'); });
+    U.$$('.mt-item', root).forEach(function (x) { x.classList.remove('sel', 'ok', 'bad', 'matched'); });
     var v = root.querySelector('.vz'); if (v) v.className = 'vz';
+    var why = root.querySelector('.why'); if (why) why.className = 'why';
   }
   function matchPick(root, btn, b) {
     var side = btn.getAttribute('data-side');
@@ -4639,6 +4681,7 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
         return '<div class="bug-line" data-ln="' + (i + 1) + '"><span class="bug-n">' + (i + 1) + '</span><code>' + (hl(l) || '&nbsp;') + '</code></div>';
       }).join('') + '</div>' +
       '<div class="blk-row"><span class="blk-tip">点击你认为有问题的行，可选多行</span>' +
+      '<button class="cb-btn" data-act="reset-bug" data-key="' + b.key + '">重新作答</button>' +
       '<button class="cb-btn primary" data-act="check-bug" data-key="' + b.key + '">' + U.icon('check', 13) + ' 指认</button>' +
       (b.code && /int\s+main/.test(b.code) ? '<button class="cb-btn" data-act="run-bug" data-key="' + b.key + '">' + U.icon('play', 13) + ' 运行看报错</button>' : '') +
       '</div>' +
@@ -4647,6 +4690,11 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
   }
   function bugToggle(el) {
     el.classList.toggle('picked');
+  }
+  function resetBug(root) {
+    U.$$('.bug-line', root).forEach(function (x) { x.classList.remove('picked', 'truth', 'bad'); });
+    var v = root.querySelector('.vz'); if (v) v.className = 'vz';
+    var why = root.querySelector('.why'); if (why) why.className = 'why';
   }
   function checkBug(root, b) {
     var got = U.$$('.bug-line.picked', root).map(function (x) { return +x.getAttribute('data-ln'); });
@@ -4692,6 +4740,7 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
     if (now) { U.addXp(8, 'ex:' + b.key); U.recordActivity(1); }
     var total = b.items.length, n = U.$$('.ex-check.done', root).length;
     paintState(root, n === total ? 'ok' : '', U.icon(n === total ? 'check' : 'code', 13) + n + ' / ' + total + ' 题');
+    document.dispatchEvent(new Event('lessonprogress'));
   }
 
   /* ---------------- 渲染入口 ---------------- */
@@ -4716,6 +4765,13 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
       var node = root.querySelector('[data-quiz="' + b.key + '"],[data-fill="' + b.key + '"],[data-predict="' + b.key + '"],[data-order="' + b.key + '"],[data-trace="' + b.key + '"],[data-match="' + b.key + '"],[data-bug="' + b.key + '"],[data-ex="' + b.key + '"]');
       if (!node) return;
       patchState(node, b);
+      if (b.t === 'quiz') {
+        var saved = U.state().quiz[b.key];
+        if (saved) {
+          var allRight = saved.right === saved.total;
+          paintState(node, allRight ? 'ok' : 'bad', U.icon(allRight ? 'check' : 'x', 13) + (allRight ? '已通过' : '有错题'));
+        }
+      }
       if (b.t === 'order') {
         node.__display = b.display;
       }
@@ -4747,13 +4803,14 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
       if (a === 'run-fill') { var rf = act.closest('[data-fill]'); var bf = findBlock(rf); runByKey(bf.key, fillResolved(bf, fillValues(rf))); return true; }
       if (a === 'check-pred') { var rp = act.closest('[data-predict]'); checkPredict(rp, findBlock(rp)); return true; }
       if (a === 'run-pred') { var rp2 = act.closest('[data-predict]'); runByKey(findBlock(rp2).key); return true; }
-      if (a === 'check-order') { var ro = act.closest('[data-order]'); var bo = findBlock(ro); var seq = U.$$('.ord-item.picked', ro).map(function (x) { return +x.getAttribute('data-src'); }); checkOrder(ro, bo, seq); return true; }
+      if (a === 'check-order') { var ro = act.closest('[data-order]'); var bo = findBlock(ro); checkOrder(ro, bo, orderSequence(ro)); return true; }
       if (a === 'reset-order') { var ro2 = act.closest('[data-order]'); resetOrder(ro2, findBlock(ro2)); return true; }
       if (a === 'check-trace') { var rt = act.closest('[data-trace]'); checkTrace(rt, findBlock(rt)); return true; }
       if (a === 'run-trace') { var rt2 = act.closest('[data-trace]'); var bt = findBlock(rt2); runByKey(bt.key, bt.code || bt.output); return true; }
       if (a === 'reset-match') { resetMatch(act.closest('[data-match]')); return true; }
       if (a === 'check-match') { var rm = act.closest('[data-match]'); var bm = findBlock(rm); checkMatchAll(rm, bm); return true; }
       if (a === 'check-bug') { var rb = act.closest('[data-bug]'); checkBug(rb, findBlock(rb)); return true; }
+      if (a === 'reset-bug') { resetBug(act.closest('[data-bug]')); return true; }
       if (a === 'run-bug') { var rb2 = act.closest('[data-bug]'); var bb2 = findBlock(rb2); runByKey(bb2.key, bb2.code); return true; }
       if (a === 'hint') { var h = root().querySelector('[data-hint="' + act.getAttribute('data-target') + '"]'); if (h) h.hidden = !h.hidden; return true; }
     }
@@ -4873,7 +4930,7 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
       '<a class="btn ghost lg" href="#/playground">' + U.icon('terminal', 15) + '打开练习场</a>' +
       '</div>' +
       '<div class="hero-meta">' +
-      '<span><b>' + (CONTENT[1] ? CONTENT[1].lessons.length : 0) + ' 课时</b>已上线</span>' +
+      '<span><b>' + total + ' 课时</b>已上线</span>' +
       '<span><b>' + total + ' 课时</b>完整大纲</span>' +
       '<span><b>真实 g++</b> 在线编译</span>' +
       '</div>' +
@@ -5005,9 +5062,10 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
   function dueReviewCards() {
     var st = U.state();
     var done = st.completed || [];
-    if (!done.length) return [];                 // 新生还没学任何课时：不预置复习卡（豆包 P1）
+    var mistakes = st.mistakes.map(function (m) { return m.key; });
     return allCards().filter(function (c) {
-      if (c.src && done.indexOf(c.src) < 0) return false;   // 没学过的课时不产生复习卡
+      var learned = c.src ? done.indexOf(c.src) >= 0 : done.length > 0;
+      if (!learned && mistakes.indexOf(c.id) < 0) return false;
       return U.SRS.due(c.id);
     });
   }
@@ -5105,13 +5163,16 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
     c.lessons.forEach(function (x, i) { if (x.id === lid) { idx = i; l = x; } });
     if (!l) { el.innerHTML = '<p>没有这一课时</p>'; return; }
     document.getElementById('pageTitle').textContent = '第 ' + wid + ' 周 · 课时 ' + (idx + 1);
-    var prev = idx > 0 ? c.lessons[idx - 1] : null;
-    var next = idx < c.lessons.length - 1 ? c.lessons[idx + 1] : null;
+    var sequence = [];
+    Object.keys(window.CONTENT).map(Number).sort(function (a, b) { return a - b; }).forEach(function (w) {
+      window.CONTENT[w].lessons.forEach(function (lesson) { sequence.push({ week: w, lesson: lesson }); });
+    });
+    var position = sequence.findIndex(function (entry) { return entry.lesson.id === lid; });
+    var prev = sequence[position - 1], next = sequence[position + 1];
     var done = U.state().completed.indexOf(l.id) >= 0;
     var blocks = l.blocks || [];
 
     Blocks.setBlocks(blocks);
-    var bodyHtml = blocks.map(function (b) { return Blocks.render(b); }).join('');
 
     /* 目录 */
     var toc = blocks.map(function (b, i) {
@@ -5131,18 +5192,20 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
       (l.keypoints && l.keypoints.length
         ? '<div class="keyline"><div class="keyline-h">' + U.icon('keylock', 14) + '本课核心</div><ul>' + l.keypoints.map(function (k) { return '<li>' + esc(k) + '</li>'; }).join('') + '</ul></div>'
         : '') +
+      '<section class="lesson-progress" aria-label="本课互动进度"><div class="lesson-progress-head"><b>' + U.icon('target', 15) + '本课挑战</b><span data-lesson-status aria-live="polite"></span></div>' +
+      '<div class="lvl-bar" data-lesson-bar role="progressbar" aria-label="已通过互动" aria-valuemin="0"><i></i></div></section>' +
       '<div class="lesson-wrap"><div class="lesson-body">' +
       blocks.map(function (b, i) { return '<div class="blk-anchor" id="b' + i + '"></div>' + Blocks.render(b); }).join('') +
       '<nav class="lesson-nav">' +
-      (prev ? '<a class="btn ghost" href="#/lesson/' + wid + '/' + prev.id + '">' + U.icon('chev', 14) + '上一课时</a>' : '<span></span>') +
+      (prev ? '<a class="btn ghost" href="#/lesson/' + prev.week + '/' + prev.lesson.id + '">' + U.icon('chev', 14) + (prev.week === wid ? '上一课时' : '上一周 · 最后一课') + '</a>' : '<span></span>') +
       '<button class="btn ' + (done ? 'ghost' : 'primary') + ' lg" id="finishLesson">' + U.icon('check', 15) + (done ? '已完成本课时' : '标记本课时完成') + '</button>' +
-      (next ? '<a class="btn ghost" href="#/lesson/' + wid + '/' + next.id + '">下一课时' + U.icon('chev', 14) + '</a>' : '<span></span>') +
+      (next ? '<a class="btn ghost" href="#/lesson/' + next.week + '/' + next.lesson.id + '">' + (next.week === wid ? '下一课时' : '下一周 · 第 1 课') + U.icon('chev', 14) + '</a>' : '<a class="btn ghost" href="#/curriculum">回顾全部课程</a>') +
       '</nav>' +
       (l.summary ? '<div class="lesson-sum"><div class="keyline-h">' + U.icon('spark', 14) + '本课一句话</div><p>' + esc(l.summary) + '</p></div>' : '') +
       '</div>' +
       '<aside class="lesson-aside"><div class="aside-stick">' +
       '<div class="card side"><div class="card-h"><h3>本课时导航</h3></div><div class="toc">' + toc + '</div>' +
-      '<div class="prog-mini"><span>完成度</span><div class="lvl-bar"><i style="width:' + lessonProgress(blocks) + '%"></i></div></div>' +
+      '<div class="prog-mini"><span>互动完成度</span><div class="lvl-bar" data-lesson-bar role="progressbar" aria-label="已通过互动" aria-valuemin="0"><i></i></div></div>' +
       '</div>' +
       '<div class="card side"><div class="card-h"><h3>随堂笔记</h3></div>' +
       '<textarea class="notes" data-note="' + l.id + '" placeholder="记下你被坑的那一行…&#10;会自动保存">' + U.esc(U.state().notes[l.id] || '') + '</textarea>' +
@@ -5151,16 +5214,34 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
       '</div>';
 
     Blocks.afterRender(el, blocks);
+    V.refreshLessonProgress();
   };
+  function blockPassed(b) {
+    var s = U.state();
+    if (b.t === 'exercise') { var m = s.exercise[b.key] || {}; return b.items.every(function (it) { return !!m[it.i]; }); }
+    if (b.t === 'quiz') { var q = s.quiz[b.key]; return !!q && q.total === b.questions.length && q.right === q.total; }
+    return !!(s.inter[b.key] && s.inter[b.key].ok);
+  }
   function lessonProgress(blocks) {
     var rel = blocks.filter(function (b) { return ['quiz', 'fill', 'predict', 'order', 'trace', 'match', 'bug', 'exercise'].indexOf(b.t) >= 0; });
-    if (!rel.length) return 0;
-    var done = rel.filter(function (b) {
-      if (b.t === 'exercise') { var m = U.state().exercise[b.key] || {}; return Object.keys(m).filter(function (k) { return m[k]; }).length === b.items.length; }
-      var st = U.state().inter[b.key]; return st && st.ok;
-    }).length;
-    return Math.round(done / rel.length * 100);
+    var done = rel.filter(blockPassed).length;
+    return { done: done, total: rel.length, pct: pct(done, rel.length) };
   }
+  V.refreshLessonProgress = function () {
+    var p = location.hash.split('/');
+    if (p[1] !== 'lesson') return;
+    var c = window.CONTENT[+p[2]];
+    var l = c && c.lessons.filter(function (lesson) { return lesson.id === p[3]; })[0];
+    if (!l) return;
+    var progress = lessonProgress(l.blocks);
+    U.$$('[data-lesson-status]').forEach(function (el) { el.textContent = '已通过 ' + progress.done + ' / ' + progress.total + ' 项互动'; });
+    U.$$('[data-lesson-bar]').forEach(function (el) {
+      el.setAttribute('aria-valuenow', progress.done);
+      el.setAttribute('aria-valuemax', progress.total);
+      el.querySelector('i').style.width = progress.pct + '%';
+    });
+    U.$$('.toc-i').forEach(function (el, i) { el.classList.toggle('is-passed', blockPassed(l.blocks[i])); });
+  };
   /* ============================ 练习场 ============================ */
   V.playground = function (el) {
     var s = U.state();
@@ -5211,8 +5292,10 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
     startReview(queue, 0);
   };
   function mistakeCards() {
+    var cards = allCards();
     return U.state().mistakes.map(function (m) {
-      return { id: m.key, kind: '错题', front: m.title || '（题目）', back: '（解析）', why: m.why || '', wrong: '', src: m.src || '' };
+      return cards.filter(function (c) { return c.id === m.key; })[0] ||
+        { id: m.key, kind: '错题', front: m.title || '错题回顾', back: m.why || '回到原课时查看解析。', why: '', wrong: '', src: m.src || '' };
     });
   }
   function startReview(queue, i) {
@@ -5266,10 +5349,14 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
     var m = U.state().mistakes;
     el.innerHTML = '<div class="sec-head"><h2>错题本</h2><p>共 ' + m.length + ' 条。做错的互动题会自动进来。</p></div>' +
       (m.length
-        ? '<div class="mist-list">' + m.map(function (x) {
+        ? '<a class="btn primary mist-review" href="#/review/mistakes">' + U.icon('cards', 15) + '复习这些错题</a><div class="mist-list">' + m.map(function (x) {
+          var source = String(x.src || '').split('#')[0];
+          var week = source.split('-')[0];
+          var hasSource = window.CONTENT[week] && window.CONTENT[week].lessons.some(function (l) { return l.id === source; });
           return '<div class="mist"><div class="mist-t">' + U.esc(x.title || '题目') + '</div>' +
             (x.why ? '<div class="mist-w">' + U.icon('bulb', 13) + ' ' + U.esc(x.why) + '</div>' : '') +
-            '<div class="mist-f"><span>' + U.esc(x.type || '') + '</span><span>' + new Date(x.at).toLocaleDateString('zh-CN') + '</span></div></div>';
+            '<div class="mist-f"><span>' + U.esc(x.type || '') + '</span><span>' + new Date(x.at).toLocaleDateString('zh-CN') + '</span>' +
+            (hasSource ? '<a class="mist-source" href="#/lesson/' + week + '/' + source + '">回到原课时 ' + U.icon('chev', 12) + '</a>' : '') + '</div></div>';
         }).join('') + '</div>'
         : '<section class="card empty-card">' + U.icon('check', 26) + '<h3>还没有错题</h3><p>做错一次，它就会出现在复习本里。</p></section>');
   };
@@ -5332,7 +5419,7 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
       '<div class="seg" id="themeSeg">' +
       ['light:浅色', 'dark:深色', 'auto:跟随系统'].map(function (x) {
         var p = x.split(':');
-        return '<button class="seg-b' + (s.settings.theme === p[0] ? ' on' : '') + '" data-theme="' + p[0] + '">' + p[1] + '</button>';
+        return '<button class="seg-b' + (s.settings.theme === p[0] ? ' on' : '') + '" data-theme-set="' + p[0] + '">' + p[1] + '</button>';
       }).join('') + '</div>' +
       '<p class="card-p muted">深夜写代码建议切深色，代码高亮对比度更高。</p></section>' +
       '<section class="card"><div class="card-h"><h3>数据</h3></div>' +
@@ -5428,6 +5515,7 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
     var el = document.getElementById('view');
     el.classList.remove('is-new');   // 路由切换先清掉新生首屏标记，避免隐藏其他页面内容
     window.scrollTo(0, 0);
+    document.body.scrollTop = 0;
     closeDrawer();
     el.innerHTML = '';
     try {
@@ -5455,7 +5543,7 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
   }
   function markNav(view) {
     var map = { week: '#/curriculum', lesson: '#/curriculum' };
-    var target = '#' + (parts().join('/') || 'dashboard');
+    var target = '#/' + (parts().join('/') || 'dashboard');
     U.$$('#navMain .nav-i').forEach(function (a) {
       var href = a.getAttribute('href');
       a.classList.toggle('on', href === target || (view === 'week' || view === 'lesson' ? href === '#/curriculum' : target.indexOf(href) === 0));
@@ -5705,6 +5793,13 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
       U.$$('#themeSeg .seg-b').forEach(function (x) { x.classList.toggle('on', x === th); });
       return;
     }
+    var toc = t.closest('.toc-i');
+    if (toc) {
+      e.preventDefault();
+      var anchor = document.getElementById(toc.getAttribute('href').slice(1));
+      if (anchor) anchor.scrollIntoView();
+      return;
+    }
     // 内容块的交互交给 Blocks
     Blocks.onClick(e);
   }
@@ -5726,6 +5821,11 @@ return {WEEKS:WEEKS, CONTENT:CONTENT, GLOSSARY:GLOSSARY, TEMPLATES:TEMPLATES, RE
     applyTheme(U.state().settings.theme || 'light');
     document.addEventListener('click', onClick);
     document.addEventListener('keydown', onKey);
+    document.addEventListener('lessonprogress', function () {
+      Views.refreshLessonProgress();
+      renderShell();
+      markNav(parts()[0] || 'dashboard');
+    });
     document.addEventListener('input', U.debounce(function (e) {
       var n = e.target.closest ? e.target.closest('[data-note]') : null;
       if (n) { U.state().notes[n.getAttribute('data-note')] = n.value; U.store.save(); }
